@@ -55,7 +55,7 @@ abstract class BaseModel
      * Builds a SQL query from an array of conditions
      *
      * @param array $conditions
-     * @param \MT_Cafeteria\models\BaseModel $model
+     * @param BaseModel $model
      * @return string the prepared SQL query
      */
     private static function buildWhereClause(array $conditions, BaseModel $model): string {
