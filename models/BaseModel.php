@@ -22,6 +22,28 @@ abstract class BaseModel
         $this->db_fields = static::$fields;
     }
 
+    /**
+     * Get a Collection based on WP query results
+     *
+     * @param array $results
+     * @return Collection
+     */
+    private function getCollectedResults(array $results): Collection {
+        if (empty($results)) {
+            return new Collection([]);
+        }
+
+        $list = [];
+        foreach ($results as $result) {
+            global $wpdb;
+            $model = new static($wpdb);
+            $model->setFields($result);
+            $list[] = $model;
+        }
+
+        return new Collection($list);
+    }
+
     public function getTable(): string {
         return $this->table;
     }
@@ -46,7 +68,7 @@ abstract class BaseModel
         } else {
             throw new \InvalidArgumentException("Invalid property: {$name}");
         }
-    } 
+    }
 
     // Magic method for checking if a property is set
     public function __isset($name) {
@@ -101,7 +123,7 @@ abstract class BaseModel
     }
 
     /**
-     * Insert row or update (if $values['id'] is passed)
+     * Insert row or update (if $data['id'] is passed)
      *
      * @param array $data  Data to update (in column => value pairs).
      * @return bool|int The number of rows updated, or false on error.
@@ -189,13 +211,13 @@ abstract class BaseModel
         global $wpdb;
         $model = new static($wpdb);
 
-        $result = $model->wpdb->get_results($sql);
+        $results = $model->wpdb->get_results($sql);
 
         if ($model->wpdb->last_error) {
             throw new \RuntimeException("Database query failed: " . $model->wpdb->last_error);
         }
 
-        return $result;
+        return $model->getCollectedResults($results);
     }
 
 
@@ -255,7 +277,7 @@ abstract class BaseModel
 
         $model = new static($wpdb); // Creates an instance of the derived class
 
-        if (is_array($conditions)) {
+        if (!empty($conditions)) {
             $whereClause = self::buildWhereClause($conditions, $model);
             $sql = $model->wpdb->prepare("SELECT * FROM {$model->table} WHERE {$whereClause}");
 
@@ -291,7 +313,7 @@ abstract class BaseModel
 
         $model = new static($wpdb); // Creates an instance of the derived class
 
-        if (is_array($conditions)) {
+        if (!empty($conditions)) {
             $whereClause = self::buildWhereClause($conditions, $model);
             $sql = $model->wpdb->prepare("SELECT * FROM {$model->table} WHERE {$whereClause}");
 
@@ -301,19 +323,7 @@ abstract class BaseModel
 
         $results = $model->wpdb->get_results($sql, ARRAY_A);
 
-        if (empty($results)) {
-            return new Collection([]);
-        }
-
-        $list = [];
-        foreach ($results as $result) {
-            global $wpdb;
-            $model = new static($wpdb);
-            $model->setFields($result);
-            $list[] = $model;
-        }
-
-        return new Collection($list);
+        return $model->getCollectedResults($results);
     }
 
     /**
@@ -336,7 +346,7 @@ abstract class BaseModel
     }
 
     /**
-     * Deletes records matching provided conditions.
+     * Delete records matching provided conditions.
      *
      * @param array $conditions Data to search (in column => value pairs).
      *
@@ -346,7 +356,7 @@ abstract class BaseModel
         global $wpdb;
         $model = new static($wpdb);
 
-        if (is_array($conditions)) {
+        if (!empty($conditions)) {
             $whereClause = self::buildWhereClause($conditions, $model);
             $sql = $model->wpdb->prepare("DELETE * FROM {$model->table} WHERE {$whereClause}");
 
@@ -383,9 +393,9 @@ abstract class BaseModel
 
         if (isset($this->id)) {
             return $this->update($data, ['id' => $this->id]);
-        } else {
-            return $this->replace($data);
         }
+
+        return $this->replace($data);
     }
 
 }
@@ -395,4 +405,5 @@ abstract class BaseModel
 class NoResultException extends \RuntimeException
 {
 }
+
 
