@@ -203,11 +203,11 @@ abstract class BaseModel
      *
      * @param string $sql The raw SQL query to execute.
      *
-     * @return array|object|null Database query results or null if there are no results.
+     * @return Collection Database query results in a collection of BaseModel objects.
      *
      * @throws \RuntimeException Throws an exception if the SQL query fails.
      */
-    public static function rawQuery(string $sql) {
+    public static function rawQuery(string $sql): Collection {
         global $wpdb;
         $model = new static($wpdb);
 
