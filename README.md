@@ -4,7 +4,7 @@ MT ORM is a simple WordPress Object-Relational Mapping (ORM) designed to provide
 
 ## Installation
 
-Just copy the 2 classes in models and require them anywhere you want to use it. You can wrap them in a plugin if you wish to use it globally.
+Just copy the 2 classes in models and require them anywhere you want to use it. You can wrap them in a plugin if you wish to use them globally.
 
 ## Usage
 
@@ -14,8 +14,6 @@ Here is a basic usage of the BaseModel class:
 <?php
 
 require_once 'path/to/BaseModel.php';
-
-use MT_Cafeteria\models\BaseModel;
 
 // First, define your own model class
 class MyModel extends BaseModel {
