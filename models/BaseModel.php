@@ -75,9 +75,10 @@ abstract class BaseModel
 
 
     /**
+     * Updates a row in the table.
      *
-     * @param array $data
-     * @param array $where
+     * @param array $data Data to update (in column => value pairs).
+     * @param array $where A named array of WHERE clauses (in column => value pairs).
      * @return bool|int The number of rows updated, or false on error.
      */
     private function update(array $data, array $where) {
@@ -100,7 +101,7 @@ abstract class BaseModel
     /**
      * Insert row or update (if $values['id'] is passed)
      *
-     * @param array $data
+     * @param array $data  Data to update (in column => value pairs).
      * @return bool|int The number of rows updated, or false on error.
      */
     private function replace(array $data) {
@@ -141,7 +142,7 @@ abstract class BaseModel
      * ]);
      * ```
      *
-     * @param array $values An associative array of field => value pairs
+     * @param array $values Data to update (in column => value pairs).
      * @return BaseModel The current instance for method chaining
      */
     public function setFields(array $values): BaseModel {
@@ -219,7 +220,7 @@ abstract class BaseModel
         $result = $model->wpdb->get_row($sql, ARRAY_A);
 
         if (empty($result)) {
-            throw new \MT_Cafeteria\models\NoResultException("No record found with ID $id in {$model->table}");
+            throw new NoResultException("No record found with ID $id in {$model->table}");
         }
 
         $model->setFields($result);
@@ -242,7 +243,7 @@ abstract class BaseModel
      * $user = User::getFrom(['name' => 'John Doe']);
      * ```
      *
-     * @param array $conditions An associative array of column names and values.
+     * @param array $conditions Data to search (in column => value pairs).
      * @return static An instance of the calling class with properties set to the values of the retrieved record.
      * @throws \InvalidArgumentException If the $conditions argument is not an array.
      * @throws NoResultException If no record matches the provided conditions.
@@ -273,7 +274,7 @@ abstract class BaseModel
     /**
      * Fetches all records from the table that meet the provided conditions.
      *
-     * @param array $conditions An associative array where keys are field names and values are the corresponding values to be matched in the records.
+     * @param array $conditions Data to search (in column => value pairs).
      *
      * @return Collection Returns an array of objects that are instances of the calling class, each representing a record in the table that meets the conditions.
      *
@@ -335,8 +336,7 @@ abstract class BaseModel
     /**
      * Deletes records matching provided conditions.
      *
-     * @param array $conditions An associative array where keys are field names and values are the corresponding values
-     * to be matched in the records.
+     * @param array $conditions Data to search (in column => value pairs).
      *
      * @return int|false The number of rows updated, or false on error.
      */
@@ -393,3 +393,4 @@ abstract class BaseModel
 class NoResultException extends \RuntimeException
 {
 }
+
