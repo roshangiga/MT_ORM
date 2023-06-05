@@ -41,10 +41,12 @@ abstract class BaseModel
 
     // Magic method for setting properties
     public function __set($name, $value) {
-        if (property_exists($this, $name)) {
+        if (in_array($name, this->db_fields, true)) {
             $this->$name = $value;
+        } else {
+            throw new \InvalidArgumentException("Invalid property: {$name}");
         }
-    }
+    } 
 
     // Magic method for checking if a property is set
     public function __isset($name) {
