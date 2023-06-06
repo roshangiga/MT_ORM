@@ -273,17 +273,16 @@ abstract class BaseModel
      * @throws NoResultException If no record matches the provided conditions.
      */
     public static function getFrom(array $conditions = []): BaseModel {
-        global $wpdb;
-
-        $model = new static($wpdb); // Creates an instance of the derived class
-
         if (empty($conditions)) {
             throw new \InvalidArgumentException("Invalid argument provided for conditions. Expected associative array.");
         }
 
+        global $wpdb;
+        $model = new static($wpdb); // Creates an instance of the derived class
+
         $whereClause = self::buildWhereClause($conditions, $model);
         $sql = $model->wpdb->prepare("SELECT * FROM {$model->table} WHERE {$whereClause}");
-        
+
         $result = $model->wpdb->get_row($sql, ARRAY_A);
 
         if (empty($result)) {
@@ -308,14 +307,10 @@ abstract class BaseModel
      * $histories = History::getAll(['user_id' => 1]);
      */
     public static function getAll(array $conditions = []): Collection {
-        global $wpdb;
 
+        global $wpdb;
         $model = new static($wpdb); // Creates an instance of the derived class
 
-        if (empty($conditions)) {
-            throw new \InvalidArgumentException("Invalid argument provided for conditions. Expected associative array.");
-        }
-        
         $whereClause = self::buildWhereClause($conditions, $model);
         $sql = $model->wpdb->prepare("SELECT * FROM {$model->table} WHERE {$whereClause}");
 
@@ -351,12 +346,12 @@ abstract class BaseModel
      * @return int|false The number of rows updated, or false on error.
      */
     public static function deleteWhere(array $conditions): int {
-        global $wpdb;
-        $model = new static($wpdb);
-
         if (empty($conditions)) {
             throw new \InvalidArgumentException("Invalid argument provided for conditions. Expected associative array.");
         }
+
+        global $wpdb;
+        $model = new static($wpdb); // Creates an instance of the derived class
 
         $whereClause = self::buildWhereClause($conditions, $model);
         $sql = $model->wpdb->prepare("DELETE * FROM {$model->table} WHERE {$whereClause}");
@@ -368,6 +363,61 @@ abstract class BaseModel
         }
 
         return $result;
+    }
+
+    /**
+     * Performs a bulk update on a collection of models.
+     *
+     * ```php
+     * // Example:
+     * $histories = History::getAll(['user_id' => 1]);
+     * $result = History::bulkSave($histories, ['is_paid' => true]);
+     * ```
+     * @param Collection $models A collection of models to update.
+     * @param array $data An associative array of field names and values to update.
+     *
+     * @throws \InvalidArgumentException if the $models collection is empty.
+     * @throws \RuntimeException if the SQL query fails.
+     *
+     * @return bool True if the operation was successful, false otherwise.
+     */
+    public static function bulkSave(Collection $models, array $data): bool
+    {
+        if(empty($models)) {
+            throw new \InvalidArgumentException("The collection of models is empty.");
+        }
+
+        global $wpdb;
+        $model = new static($wpdb);
+        $table = $model->getTable();
+
+        // Collect the IDs of the models
+        $ids = [];
+        foreach($models as $model) {
+            $ids[] = $model->id;
+        }
+
+        // Prepare the SET clause
+        $set = [];
+        foreach($data as $key => $value) {
+            $set[] = $wpdb->prepare("{$key} = %s", $value);
+        }
+        $setClause = implode(", ", $set);
+
+        // Prepare the WHERE clause
+        $idsFormat = implode(", ", array_fill(0, count($ids), '%d'));
+        $whereClause = $wpdb->prepare("id IN ($idsFormat)", $ids);
+
+        // Prepare the full SQL statement
+        $sql = "UPDATE {$table} SET {$setClause} WHERE {$whereClause}";
+
+        $result = $wpdb->query($sql);
+
+        if ($wpdb->last_error) {
+            throw new \RuntimeException("Bulk update operation failed: " . $wpdb->last_error);
+        }
+
+        return $result !== false;
     }
 
     /**
@@ -402,3 +452,4 @@ abstract class BaseModel
 class NoResultException extends \RuntimeException
 {
 }
+
