@@ -125,7 +125,7 @@ abstract class BaseModel
     /**
      * Insert row or update (if $data['id'] is passed)
      *
-     * @param array $data  Data to update (in column => value pairs).
+     * @param array $data Data to update (in column => value pairs).
      * @return bool|int The number of rows updated, or false on error.
      */
     private function replace(array $data) {
@@ -277,14 +277,13 @@ abstract class BaseModel
 
         $model = new static($wpdb); // Creates an instance of the derived class
 
-        if (!empty($conditions)) {
-            $whereClause = self::buildWhereClause($conditions, $model);
-            $sql = $model->wpdb->prepare("SELECT * FROM {$model->table} WHERE {$whereClause}");
-
-        } else {
+        if (empty($conditions)) {
             throw new \InvalidArgumentException("Invalid argument provided for conditions. Expected associative array.");
         }
 
+        $whereClause = self::buildWhereClause($conditions, $model);
+        $sql = $model->wpdb->prepare("SELECT * FROM {$model->table} WHERE {$whereClause}");
+        
         $result = $model->wpdb->get_row($sql, ARRAY_A);
 
         if (empty($result)) {
@@ -313,13 +312,12 @@ abstract class BaseModel
 
         $model = new static($wpdb); // Creates an instance of the derived class
 
-        if (!empty($conditions)) {
-            $whereClause = self::buildWhereClause($conditions, $model);
-            $sql = $model->wpdb->prepare("SELECT * FROM {$model->table} WHERE {$whereClause}");
-
-        } else {
+        if (empty($conditions)) {
             throw new \InvalidArgumentException("Invalid argument provided for conditions. Expected associative array.");
         }
+        
+        $whereClause = self::buildWhereClause($conditions, $model);
+        $sql = $model->wpdb->prepare("SELECT * FROM {$model->table} WHERE {$whereClause}");
 
         $results = $model->wpdb->get_results($sql, ARRAY_A);
 
@@ -356,13 +354,12 @@ abstract class BaseModel
         global $wpdb;
         $model = new static($wpdb);
 
-        if (!empty($conditions)) {
-            $whereClause = self::buildWhereClause($conditions, $model);
-            $sql = $model->wpdb->prepare("DELETE * FROM {$model->table} WHERE {$whereClause}");
-
-        } else {
+        if (empty($conditions)) {
             throw new \InvalidArgumentException("Invalid argument provided for conditions. Expected associative array.");
         }
+
+        $whereClause = self::buildWhereClause($conditions, $model);
+        $sql = $model->wpdb->prepare("DELETE * FROM {$model->table} WHERE {$whereClause}");
 
         $result = $model->wpdb->query($sql);
 
@@ -405,5 +402,3 @@ abstract class BaseModel
 class NoResultException extends \RuntimeException
 {
 }
-
-
