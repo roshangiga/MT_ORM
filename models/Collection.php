@@ -7,7 +7,10 @@
  */
 
 
-class Collection extends ArrayObject {
+use ArrayObject;
+
+class Collection extends ArrayObject
+{
     public function __construct(array $items = []) {
         parent::__construct($items);
     }
@@ -50,7 +53,7 @@ class Collection extends ArrayObject {
     }
 
     public function pluck(string $field) {
-        return array_map(function($item) use ($field) {
+        return array_map(function ($item) use ($field) {
             return is_object($item) ? $item->$field : (is_array($item) ? $item[$field] : null);
         }, $this->getArrayCopy());
     }
@@ -59,5 +62,33 @@ class Collection extends ArrayObject {
         return json_encode($this->getArrayCopy());
     }
 
+    /**
+     * Convert the Collection to its string representation.
+     * This example will output all elements as a JSON string.
+     *
+     * @return string
+     */
+    public function __toString(): string {
+        $list = [];
+        foreach ($this as $model) {
+            $list[] = $model->getFields();
+        }
+        return json_encode($list);
+    }
 
+
+    /**
+     * Save all items in the collection.
+     *
+     * @return void
+     */
+    public function save(): void {
+
+        foreach ($this as $item) {
+            // Check if the item is an instance of BaseModel or its child class
+            if ($item instanceof BaseModel) {
+                $item->save();
+            }
+        }
+    }
 }
