@@ -2,13 +2,14 @@
 
 /**
  * Created by PhpStorm.
- * User: Roshan Summun ( roshangiga@gmail.com )
- * Date: 6/5/2023
- * Time: 11:59 AM
+ * User: roshan.summun
+ * Date: 7/12/2023
+ * Time: 10:20 AM
  *
  * All model Classes should extend this abstract BaseModel Class. It has all the wrapper for
  * get, getAll, delete, update.
  */
+
 abstract class BaseModel
 {
     private \wpdb $wpdb;
@@ -58,6 +59,10 @@ abstract class BaseModel
             return $this->$name;
         }
 
+        if (!in_array($name, $this->db_fields, true)) {
+            throw new \InvalidArgumentException("Undefined property: {$name}. Is it defined in fields?");
+        }
+
         return null;
     }
 
@@ -65,9 +70,9 @@ abstract class BaseModel
     public function __set($name, $value) {
         if (in_array($name, $this->db_fields, true)) {
             $this->$name = $value;
-        } else {
-            throw new \InvalidArgumentException("Invalid property: {$name}");
         }
+
+        throw new \InvalidArgumentException("Undefined property: {$name}. Is it defined in fields?");
     }
 
     // Magic method for checking if a property is set
@@ -156,7 +161,7 @@ abstract class BaseModel
      * This method only accepts values for fields that are part of the $db_fields array.
      * Values for non-existent fields are ignored.
      *
-     * Example:
+     * **Example:**
      * ```php
      * $history = new History();
      * $history->setFields([
@@ -201,6 +206,10 @@ abstract class BaseModel
     /**
      * Executes a raw SQL query and returns the result.
      *
+     * **Example:**
+     * ```php
+     * $history = History::rawQuery("SELECT * FROM {$wpdb->prefix}history");
+     * ```
      * @param string $sql The raw SQL query to execute.
      *
      * @return Collection Database query results in a collection of BaseModel objects.
@@ -224,11 +233,9 @@ abstract class BaseModel
     /**
      * Fetches a single record from the table by its id.
      *
-     * Example:
-     * Fetches the history with the id of 1:
-     *
+     * **Example:**
      * ```php
-     * $history = History::get(1);
+     * $history = History::get(1); // Fetches the history with the id of 1
      * ```
      * @param int $id The id of the record to fetch.
      *
@@ -260,19 +267,18 @@ abstract class BaseModel
      * It returns an instance of the class that represents the first record matching
      * all the provided conditions.
      *
-     * Example:
-     * If you want to get a user with the name "John Doe", you can use this method as follows:
-     *
+     * **Example:**
      * ```php
-     * $user = User::getFrom(['name' => 'John Doe']);
+     * $user = User::getWhere(['name' => 'John Doe']); //get a user with the name "John Doe"
      * ```
      *
      * @param array $conditions Data to search (in column => value pairs).
      * @return static An instance of the calling class with properties set to the values of the retrieved record.
+     *
      * @throws \InvalidArgumentException If the $conditions argument is not an array.
      * @throws NoResultException If no record matches the provided conditions.
      */
-    public static function getFrom(array $conditions = []): BaseModel {
+    public static function getWhere(array $conditions = []): BaseModel {
         if (empty($conditions)) {
             throw new \InvalidArgumentException("Invalid argument provided for conditions. Expected associative array.");
         }
@@ -296,15 +302,13 @@ abstract class BaseModel
     /**
      * Fetches all records from the table that meet the provided conditions.
      *
+     * **Example:**
+     * ```php
+     * $histories = History::getAll(['user_id' => 1]); // Fetches all histories for user with id 1
+     * ```
      * @param array $conditions Data to search (in column => value pairs).
-     *
      * @return Collection Returns an array of objects that are instances of the calling class, each representing a record in the table that meets the conditions.
-     *
      * @throws \Exception Throws an exception if the SQL query fails.
-     *
-     * @example
-     * // Fetches all histories that belong to the user with the id of 1
-     * $histories = History::getAll(['user_id' => 1]);
      */
     public static function getAll(array $conditions = []): Collection {
 
@@ -320,11 +324,9 @@ abstract class BaseModel
     }
 
     /**
-     * Deletes the database record corresponding to this instance.
+     * Deletes the current record from the database.
      *
-     * This method uses the instance's id field to execute a delete operation on the corresponding database record.
-     *
-     * Example:
+     * **Example:**
      * ```php
      * $history = History::get(123);  // Retrieve an instance from the database
      * $history->delete();            // Delete the corresponding database record
@@ -341,8 +343,12 @@ abstract class BaseModel
     /**
      * Delete records matching provided conditions.
      *
-     * @param array $conditions Data to search (in column => value pairs).
+     * **Example:**
+     * ```php
+     * $result = History::deleteWhere(['user_id' => 1]); // Deletes all histories for user with id 1
+     * ```
      *
+     * @param array $conditions Data to search (in column => value pairs).
      * @return int|false The number of rows updated, or false on error.
      */
     public static function deleteWhere(array $conditions): int {
@@ -368,10 +374,10 @@ abstract class BaseModel
     /**
      * Performs a bulk update on a collection of models.
      *
+     * * **Example:**
      * ```php
-     * // Example:
      * $histories = History::getAll(['user_id' => 1]);
-     * $result = History::bulkSave($histories, ['is_paid' => true]);
+     * $result = History::bulkSave($histories, ['is_paid' => true]); // Set is_paid to true for all histories
      * ```
      * @param Collection $models A collection of models to update.
      * @param array $data An associative array of field names and values to update.
@@ -426,14 +432,15 @@ abstract class BaseModel
      * If the object's id property is set, it updates the existing record.
      * If the id property is not set, it inserts a new record.
      *
-     * @return bool|int The number of rows updated, or false on error.
-     *
-     * @example
+     * **Example:**
+     * ```php
      * $history = new History();
      * $history->user_id = 1;
      * $history->order_id = 123;
-     * $history->platform = "web";
      * $history->save();
+     * ```
+     * @return bool|int The number of rows updated, or false on error.
+     *
      */
     public function save() {
         $data = $this->getFields();
@@ -452,4 +459,3 @@ abstract class BaseModel
 class NoResultException extends \RuntimeException
 {
 }
-
