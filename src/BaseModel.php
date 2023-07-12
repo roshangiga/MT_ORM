@@ -2,24 +2,48 @@
 
 /**
  * Created by PhpStorm.
- * User: Roshan Summun ( roshangiga@gmail.com )
- * Date: 6/5/2023
- * Time: 11:59 AM
+ * User: roshan.summun
+ * Date: 7/12/2023
+ * Time: 10:20 AM
  *
  * All model Classes should extend this abstract BaseModel Class. It has all the wrapper for
  * get, getAll, delete, update.
  */
+namespace roshangiga;
+
 abstract class BaseModel
 {
     private \wpdb $wpdb;
     protected string $table;
     protected int $last_id;
-    protected array $db_fields = [];  // Stores the names of the database fields
+    protected array $db_fields = [];
 
     public function __construct(\wpdb $wpdb) {
         $this->wpdb = $wpdb;
         $this->table = $wpdb->prefix . static::$tableName;
         $this->db_fields = static::$fields;
+    }
+
+    /**
+     * Get a Collection based on WP query results
+     *
+     * @param array $results
+     * @return Collection
+     */
+    private function getCollectedResults(array $results): Collection {
+        if (empty($results)) {
+            return new Collection([]);
+        }
+
+        $list = [];
+        foreach ($results as $result) {
+            global $wpdb;
+            $model = new static($wpdb);
+            $model->setFields($result);
+            $list[] = $model;
+        }
+
+        return new Collection($list);
     }
 
     public function getTable(): string {
@@ -36,14 +60,20 @@ abstract class BaseModel
             return $this->$name;
         }
 
+        if (!in_array($name, $this->db_fields, true)) {
+            throw new \InvalidArgumentException("Undefined property: {$name}. Is it defined in fields?");
+        }
+
         return null;
     }
 
     // Magic method for setting properties
     public function __set($name, $value) {
-        if (property_exists($this, $name)) {
+        if (in_array($name, $this->db_fields, true)) {
             $this->$name = $value;
         }
+
+        throw new \InvalidArgumentException("Undefined property: {$name}. Is it defined in fields?");
     }
 
     // Magic method for checking if a property is set
@@ -55,7 +85,7 @@ abstract class BaseModel
      * Builds a SQL query from an array of conditions
      *
      * @param array $conditions
-     * @param \MT_Cafeteria\models\BaseModel $model
+     * @param BaseModel $model
      * @return string the prepared SQL query
      */
     private static function buildWhereClause(array $conditions, BaseModel $model): string {
@@ -75,12 +105,13 @@ abstract class BaseModel
 
 
     /**
+     * Updates a row in the table.
      *
-     * @param array $data
-     * @param array $where
+     * @param array $data Data to update (in column => value pairs).
+     * @param array $where A named array of WHERE clauses (in column => value pairs).
      * @return bool|int The number of rows updated, or false on error.
      */
-    private function update(array $data, array $where) {
+    private function update(array $data, array $where)  {
         $result = $this->wpdb->update(
             $this->table,
             $data,
@@ -98,9 +129,9 @@ abstract class BaseModel
     }
 
     /**
-     * Insert row or update (if $values['id'] is passed)
+     * Insert row or update (if $data['id'] is passed)
      *
-     * @param array $data
+     * @param array $data Data to update (in column => value pairs).
      * @return bool|int The number of rows updated, or false on error.
      */
     private function replace(array $data) {
@@ -131,7 +162,7 @@ abstract class BaseModel
      * This method only accepts values for fields that are part of the $db_fields array.
      * Values for non-existent fields are ignored.
      *
-     * Example:
+     * **Example:**
      * ```php
      * $history = new History();
      * $history->setFields([
@@ -141,7 +172,7 @@ abstract class BaseModel
      * ]);
      * ```
      *
-     * @param array $values An associative array of field => value pairs
+     * @param array $values Data to update (in column => value pairs).
      * @return BaseModel The current instance for method chaining
      */
     public function setFields(array $values): BaseModel {
@@ -176,34 +207,36 @@ abstract class BaseModel
     /**
      * Executes a raw SQL query and returns the result.
      *
+     * **Example:**
+     * ```php
+     * $history = History::rawQuery("SELECT * FROM {$wpdb->prefix}history");
+     * ```
      * @param string $sql The raw SQL query to execute.
      *
-     * @return array|object|null Database query results or null if there are no results.
+     * @return Collection Database query results in a collection of BaseModel objects.
      *
      * @throws \RuntimeException Throws an exception if the SQL query fails.
      */
-    public static function rawQuery(string $sql) {
+    public static function rawQuery(string $sql): Collection {
         global $wpdb;
         $model = new static($wpdb);
 
-        $result = $model->wpdb->get_results($sql);
+        $results = $model->wpdb->get_results($sql);
 
         if ($model->wpdb->last_error) {
             throw new \RuntimeException("Database query failed: " . $model->wpdb->last_error);
         }
 
-        return $result;
+        return $model->getCollectedResults($results);
     }
 
 
     /**
      * Fetches a single record from the table by its id.
      *
-     * Example:
-     * Fetches the history with the id of 1:
-     *
+     * **Example:**
      * ```php
-     * $history = History::get(1);
+     * $history = History::get(1); // Fetches the history with the id of 1
      * ```
      * @param int $id The id of the record to fetch.
      *
@@ -219,7 +252,7 @@ abstract class BaseModel
         $result = $model->wpdb->get_row($sql, ARRAY_A);
 
         if (empty($result)) {
-            throw new \MT_Cafeteria\models\NoResultException("No record found with ID $id in {$model->table}");
+            throw new \roshangiga\models\NoResultException("No record found with ID $id in {$model->table}");
         }
 
         $model->setFields($result);
@@ -235,35 +268,32 @@ abstract class BaseModel
      * It returns an instance of the class that represents the first record matching
      * all the provided conditions.
      *
-     * Example:
-     * If you want to get a user with the name "John Doe", you can use this method as follows:
-     *
+     * **Example:**
      * ```php
-     * $user = User::getFrom(['name' => 'John Doe']);
+     * $user = User::getWhere(['name' => 'John Doe']); //get a user with the name "John Doe"
      * ```
      *
-     * @param array $conditions An associative array of column names and values.
+     * @param array $conditions Data to search (in column => value pairs).
      * @return static An instance of the calling class with properties set to the values of the retrieved record.
+     *
      * @throws \InvalidArgumentException If the $conditions argument is not an array.
-     * @throws NoResultException If no record matches the provided conditions.
+     * @throws \roshangiga\models\NoResultException If no record matches the provided conditions.
      */
-    public static function getFrom(array $conditions = []): BaseModel {
-        global $wpdb;
-
-        $model = new static($wpdb); // Creates an instance of the derived class
-
-        if (is_array($conditions)) {
-            $whereClause = self::buildWhereClause($conditions, $model);
-            $sql = $model->wpdb->prepare("SELECT * FROM {$model->table} WHERE {$whereClause}");
-
-        } else {
+    public static function getWhere(array $conditions = []): BaseModel {
+        if (empty($conditions)) {
             throw new \InvalidArgumentException("Invalid argument provided for conditions. Expected associative array.");
         }
+
+        global $wpdb;
+        $model = new static($wpdb); // Creates an instance of the derived class
+
+        $whereClause = self::buildWhereClause($conditions, $model);
+        $sql = $model->wpdb->prepare("SELECT * FROM {$model->table} WHERE {$whereClause}");
 
         $result = $model->wpdb->get_row($sql, ARRAY_A);
 
         if (empty($result)) {
-            throw new NoResultException("No record found for : " . $sql);
+            throw new \roshangiga\models\NoResultException("No record found for : " . $sql);
         }
 
         $model->setFields($result);
@@ -273,52 +303,31 @@ abstract class BaseModel
     /**
      * Fetches all records from the table that meet the provided conditions.
      *
-     * @param array $conditions An associative array where keys are field names and values are the corresponding values to be matched in the records.
-     *
+     * **Example:**
+     * ```php
+     * $histories = History::getAll(['user_id' => 1]); // Fetches all histories for user with id 1
+     * ```
+     * @param array $conditions Data to search (in column => value pairs).
      * @return Collection Returns an array of objects that are instances of the calling class, each representing a record in the table that meets the conditions.
-     *
      * @throws \Exception Throws an exception if the SQL query fails.
-     *
-     * @example
-     * // Fetches all histories that belong to the user with the id of 1
-     * $histories = History::getAll(['user_id' => 1]);
      */
     public static function getAll(array $conditions = []): Collection {
-        global $wpdb;
 
+        global $wpdb;
         $model = new static($wpdb); // Creates an instance of the derived class
 
-        if (is_array($conditions)) {
-            $whereClause = self::buildWhereClause($conditions, $model);
-            $sql = $model->wpdb->prepare("SELECT * FROM {$model->table} WHERE {$whereClause}");
-
-        } else {
-            throw new \InvalidArgumentException("Invalid argument provided for conditions. Expected associative array.");
-        }
+        $whereClause = self::buildWhereClause($conditions, $model);
+        $sql = $model->wpdb->prepare("SELECT * FROM {$model->table} WHERE {$whereClause}");
 
         $results = $model->wpdb->get_results($sql, ARRAY_A);
 
-        if (empty($results)) {
-            return new Collection([]);
-        }
-
-        $list = [];
-        foreach ($results as $result) {
-            global $wpdb;
-            $model = new static($wpdb);
-            $model->setFields($result);
-            $list[] = $model;
-        }
-
-        return new Collection($list);
+        return $model->getCollectedResults($results);
     }
 
     /**
-     * Deletes the database record corresponding to this instance.
+     * Deletes the current record from the database.
      *
-     * This method uses the instance's id field to execute a delete operation on the corresponding database record.
-     *
-     * Example:
+     * **Example:**
      * ```php
      * $history = History::get(123);  // Retrieve an instance from the database
      * $history->delete();            // Delete the corresponding database record
@@ -333,24 +342,26 @@ abstract class BaseModel
     }
 
     /**
-     * Deletes records matching provided conditions.
+     * Delete records matching provided conditions.
      *
-     * @param array $conditions An associative array where keys are field names and values are the corresponding values
-     * to be matched in the records.
+     * **Example:**
+     * ```php
+     * $result = History::deleteWhere(['user_id' => 1]); // Deletes all histories for user with id 1
+     * ```
      *
+     * @param array $conditions Data to search (in column => value pairs).
      * @return int|false The number of rows updated, or false on error.
      */
     public static function deleteWhere(array $conditions): int {
-        global $wpdb;
-        $model = new static($wpdb);
-
-        if (is_array($conditions)) {
-            $whereClause = self::buildWhereClause($conditions, $model);
-            $sql = $model->wpdb->prepare("DELETE * FROM {$model->table} WHERE {$whereClause}");
-
-        } else {
+        if (empty($conditions)) {
             throw new \InvalidArgumentException("Invalid argument provided for conditions. Expected associative array.");
         }
+
+        global $wpdb;
+        $model = new static($wpdb); // Creates an instance of the derived class
+
+        $whereClause = self::buildWhereClause($conditions, $model);
+        $sql = $model->wpdb->prepare("DELETE * FROM {$model->table} WHERE {$whereClause}");
 
         $result = $model->wpdb->query($sql);
 
@@ -362,28 +373,84 @@ abstract class BaseModel
     }
 
     /**
+     * Performs a bulk update on a collection of models.
+     *
+     * * **Example:**
+     * ```php
+     * $histories = History::getAll(['user_id' => 1]);
+     * $result = History::bulkSave($histories, ['is_paid' => true]); // Set is_paid to true for all histories
+     * ```
+     * @param Collection $models A collection of models to update.
+     * @param array $data An associative array of field names and values to update.
+     *
+     * @throws \InvalidArgumentException if the $models collection is empty.
+     * @throws \RuntimeException if the SQL query fails.
+     *
+     * @return bool True if the operation was successful, false otherwise.
+     */
+    public static function bulkSave(Collection $models, array $data): bool
+    {
+        if(empty($models)) {
+            throw new \InvalidArgumentException("The collection of models is empty.");
+        }
+
+        global $wpdb;
+        $model = new static($wpdb);
+        $table = $model->getTable();
+
+        // Collect the IDs of the models
+        $ids = [];
+        foreach($models as $model) {
+            $ids[] = $model->id;
+        }
+
+        // Prepare the SET clause
+        $set = [];
+        foreach($data as $key => $value) {
+            $set[] = $wpdb->prepare("{$key} = %s", $value);
+        }
+        $setClause = implode(", ", $set);
+
+        // Prepare the WHERE clause
+        $idsFormat = implode(", ", array_fill(0, count($ids), '%d'));
+        $whereClause = $wpdb->prepare("id IN ($idsFormat)", $ids);
+
+        // Prepare the full SQL statement
+        $sql = "UPDATE {$table} SET {$setClause} WHERE {$whereClause}";
+
+        $result = $wpdb->query($sql);
+
+        if ($wpdb->last_error) {
+            throw new \RuntimeException("Bulk update operation failed: " . $wpdb->last_error);
+        }
+
+        return $result !== false;
+    }
+
+    /**
      * Saves the current object to the database.
      *
      * If the object's id property is set, it updates the existing record.
      * If the id property is not set, it inserts a new record.
      *
-     * @return bool|int The number of rows updated, or false on error.
-     *
-     * @example
+     * **Example:**
+     * ```php
      * $history = new History();
      * $history->user_id = 1;
      * $history->order_id = 123;
-     * $history->platform = "web";
      * $history->save();
+     * ```
+     * @return bool|int The number of rows updated, or false on error.
+     *
      */
     public function save() {
         $data = $this->getFields();
 
         if (isset($this->id)) {
             return $this->update($data, ['id' => $this->id]);
-        } else {
-            return $this->replace($data);
         }
+
+        return $this->replace($data);
     }
 
 }
