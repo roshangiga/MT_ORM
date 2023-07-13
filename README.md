@@ -7,59 +7,73 @@ Main features:
 
 1. It implements the ActiveRecord pattern, where a single instance of a class represents a row in the database table.
 2. CRUD operations (Create, Read, Update, Delete) are defined in this class. All of these methods use the _wpdb_ object.
-3. The method `bulkSave` is used to update multiple records in a single query.
-4. Magic methods `__get`, `__set` and `__isset` are used to access and set properties that match the fields in the database.
-5. It also includes helper functions such as `setFields` and `getFields` to manage the properties of the model.
-6. It provides a way to execute raw SQL queries using the `rawQuery` method.
-7. It throws custom exceptions if anything goes wrong with the database operations.
-8. It also includes a `Collection` feature for handling multiple records at once.
+3. Supports one-to-one and one-to-many relationships.
+4. It provides a way to execute raw SQL queries using the `rawQuery` method.
+5. It throws custom exceptions if anything goes wrong with the database operations.
+6. It also includes a `Collection` feature for handling multiple records at once.
 
 ## Installation
 
-Just copy the 2 classes in _models_ and require them anywhere you want to use it (such as in themes or plugins). You can wrap them in a plugin if you wish to use them globally.
+Just copy the 2 classes in _src_ and require them anywhere you want to use it (such as in themes/templates).
+You can bundle them in a plugin if you wish to use them globally (thats how I use it).
 
 ## Usage
 
-Here is a basic usage example:
-
 ```php
-<?php
-
 require_once 'path/to/BaseModel.php';
 
 // First, define your own model class (Ideally in a separate file)
-class MyModel extends BaseModel {
-    protected static string $tableName = 'my_table';
-    
-    // Optional: If you leave fields empty, it will fetch all fields from the table
-    protected static array $fields = ['id', 'name', 'description'];
-    
+class Cafeteria extends BaseModel {
+    protected static string $tableName = 'my_cafeteria';
+
     // Optional
     protected static array $excludeFields = ['updated_at'];
+    
+    // Optional
+    protected static array $oneToOne = [
+        Meal::class => 'cafeteria_id',  // assuming Meal has 'cafeteria_id' as foreign key
+    ];
 
+    // Optional
+    protected static array $oneToMany = [
+        Staff::class => 'cafeteria_id', // assuming Staff has 'cafeteria_id' as foreign key
+    ];
+    
+    // ...
+    // Any other custom methods you want to add
 }
 
-// Create a new instance
-$mymodel = new MyModel();
+// Create a new Cafeteria entry
+$cafeteria = new Cafeteria();
+$cafeteria->name = 'Cafe1';
+$cafeteria->location = 'Building1';
+$cafeteria->save();
 
-// Set fields
-$mymodel->setFields([
-    'name' => 'Sample Name',
-    'description' => 'Sample Description'
-]);
+// Fetch an entry id 1 and access the associated relationships
+$cafeteria = Cafeteria::get(1); 
+$meal = $cafeteria->Meal;           //one-to-one relationship
+$staffs = $cafeteria->Staff;        //one-to-many relationships
+// ...
 
-// OR by using magic properties
-$mymodel->name = 'Sample Name';
-$mymodel->description = 'Sample Description';
+// Fetch Cafeteria entry with a WHERE clause
+$cafeteria = Cafeteria::getWhere(['name' => 'Cafe1']);
 
-// Save to the database
-$mymodel->save();
+// Fetch Cafeteria entries (empty args fetches all)
+$cafeterias = Cafeteria::getAll(['location' => 'Rose Belle']);
 
-// Fetch by id
-$mymodelItem = MyModel::get(1);
+// Bulk update Cafeteria entries
+Cafeteria::bulkSave($cafeterias, ['location' => 'Curepipe']);
 
-// Delete a record
-$mymodelItem->delete();
+// Update an existing Cafeteria entry
+$cafeteria = Cafeteria::get(1);     // assuming 1 is the id of the cafeteria
+$cafeteria->name = 'New Cafe Name';
+$cafeteria->save();
+
+// Delete a Cafeteria entry
+$is_deleted = Cafeteria::get(1)->delete();
+
+// Delete Cafeteria entries that satisfy a condition
+Cafeteria::deleteWhere(['location' => 'Building1']);
 ```
 
 
