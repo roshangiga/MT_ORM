@@ -30,12 +30,17 @@ require_once 'path/to/BaseModel.php';
 // First, define your own model class (Ideally in a separate file)
 class MyModel extends BaseModel {
     protected static string $tableName = 'my_table';
+    
+    // Optional: If you leave fields empty, it will fetch all fields from the table
     protected static array $fields = ['id', 'name', 'description'];
+    
+    // Optional
+    protected static array $excludeFields = ['updated_at'];
+
 }
 
 // Create a new instance
-global $wpdb;
-$mymodel = new MyModel($wpdb);
+$mymodel = new MyModel();
 
 // Set fields
 $mymodel->setFields([

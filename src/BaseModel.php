@@ -11,17 +11,41 @@
  */
 namespace roshangiga;
 
+use mtorm\Collection;
+
 abstract class BaseModel
 {
-    private \wpdb $wpdb;
     protected string $table;
     protected int $last_id;
-    protected array $db_fields = [];
+    protected string $last_query;
+    protected array $fields = [];
+    protected array $excluded_fields = [];
 
-    public function __construct(\wpdb $wpdb) {
-        $this->wpdb = $wpdb;
+    public function __construct() {
+        global $wpdb;
+
         $this->table = $wpdb->prefix . static::$tableName;
-        $this->db_fields = static::$fields;
+        $this->last_id = $wpdb->insert_id;
+        $this->last_query = $wpdb->last_query;
+
+        // Check if inherited fields are set, if they are not, get columns from the database
+        $fields = static::$fields ?? $this->getTableColumns();
+
+        // Exclude fields specified in $excludeFields property of the child class
+        if (property_exists($this, 'excludeFields')) {
+            $this->excluded_fields = static::$excludeFields;
+            $fields = array_diff($fields, $this->excluded_fields);
+        }
+
+        $this->fields = $fields;
+
+    }
+
+    protected function getTableColumns(): array {
+        global $wpdb;
+
+        $sql = "SHOW COLUMNS FROM $this->table";
+        return $wpdb->get_col($sql);
     }
 
     /**
@@ -37,8 +61,7 @@ abstract class BaseModel
 
         $list = [];
         foreach ($results as $result) {
-            global $wpdb;
-            $model = new static($wpdb);
+            $model = new static();
             $model->setFields($result);
             $list[] = $model;
         }
@@ -48,6 +71,10 @@ abstract class BaseModel
 
     public function getTable(): string {
         return $this->table;
+    }
+
+    public function getLastQuery(): string {
+        return $this->last_query;
     }
 
     public function getLastId(): int {
@@ -60,7 +87,7 @@ abstract class BaseModel
             return $this->$name;
         }
 
-        if (!in_array($name, $this->db_fields, true)) {
+        if (!in_array($name, $this->fields, true)) {
             throw new \InvalidArgumentException("Undefined property: {$name}. Is it defined in fields?");
         }
 
@@ -69,11 +96,12 @@ abstract class BaseModel
 
     // Magic method for setting properties
     public function __set($name, $value) {
-        if (in_array($name, $this->db_fields, true)) {
+        if (in_array($name, $this->fields, true)) {
             $this->$name = $value;
+        } else {
+            throw new \InvalidArgumentException("Undefined property: {$name}. Is it defined in fields?");
         }
 
-        throw new \InvalidArgumentException("Undefined property: {$name}. Is it defined in fields?");
     }
 
     // Magic method for checking if a property is set
@@ -93,10 +121,12 @@ abstract class BaseModel
             return "1 = 1";
         }
 
+        global $wpdb;
+
         $where = [];
         foreach ($conditions as $field => $value) {
-            if (in_array($field, $model->db_fields, true)) {
-                $where[] = $model->wpdb->prepare("{$field} = %s", $value);
+            if (in_array($field, $model->fields, true)) {
+                $where[] = $wpdb->prepare("{$field} = %s", $value);
             }
         }
 
@@ -112,15 +142,20 @@ abstract class BaseModel
      * @return bool|int The number of rows updated, or false on error.
      */
     private function update(array $data, array $where)  {
-        $result = $this->wpdb->update(
+        global $wpdb;
+
+        $result = $wpdb->update(
             $this->table,
             $data,
             $where
         );
 
-        if ($this->wpdb->last_error) {
-            throw new \RuntimeException("Update operation failed: " . $this->wpdb->last_error);
+        if ($wpdb->last_error) {
+            throw new \RuntimeException("Update operation failed: " . $wpdb->last_error);
         }
+
+        $this->last_id = $wpdb->insert_id;
+        $this->last_query = $wpdb->last_query;
 
         // After performing update or replace, update the class properties.
         $this->setFields($data);
@@ -135,17 +170,19 @@ abstract class BaseModel
      * @return bool|int The number of rows updated, or false on error.
      */
     private function replace(array $data) {
-        $result = $this->wpdb->replace(
+        global $wpdb;
+
+        $result = $wpdb->replace(
             $this->table,
             $data,
         );
 
-        if ($this->wpdb->last_error) {
-            throw new \RuntimeException("Update operation failed: " . $this->wpdb->last_error);
+        if ($wpdb->last_error) {
+            throw new \RuntimeException("Update operation failed: " . $wpdb->last_error);
         }
 
-        // Save the ID of the last inserted row
-        $this->last_id = $this->wpdb->insert_id;
+        $this->last_id = $wpdb->insert_id;
+        $this->last_query = $wpdb->last_query;
 
         // After performing update or replace, update the class properties.
         $this->setFields($data);
@@ -177,7 +214,7 @@ abstract class BaseModel
      */
     public function setFields(array $values): BaseModel {
         // Intersect keys from $values with $db_fields
-        $filteredValues = array_intersect_key($values, array_flip($this->db_fields));
+        $filteredValues = array_intersect_key($values, array_flip($this->fields));
 
         foreach ($filteredValues as $field => $value) {
             $this->$field = $value;
@@ -196,7 +233,7 @@ abstract class BaseModel
         $values = [];
 
         // Only include properties that correspond to database fields
-        foreach ($this->db_fields as $field) {
+        foreach ($this->fields as $field) {
             if (property_exists($this, $field)) {
                 $values[$field] = $this->$field;
             }
@@ -219,12 +256,12 @@ abstract class BaseModel
      */
     public static function rawQuery(string $sql): Collection {
         global $wpdb;
-        $model = new static($wpdb);
+        $model = new static();
 
-        $results = $model->wpdb->get_results($sql);
+        $results = $wpdb->get_results($sql, ARRAY_A);
 
-        if ($model->wpdb->last_error) {
-            throw new \RuntimeException("Database query failed: " . $model->wpdb->last_error);
+        if ($wpdb->last_error) {
+            throw new \RuntimeException("Database query failed: " . $wpdb->last_error);
         }
 
         return $model->getCollectedResults($results);
@@ -246,13 +283,13 @@ abstract class BaseModel
      */
     public static function get(int $id): BaseModel {
         global $wpdb;
-        $model = new static($wpdb);
+        $model = new static();
 
-        $sql = $model->wpdb->prepare("SELECT * FROM {$model->table} WHERE id = %d", $id);
-        $result = $model->wpdb->get_row($sql, ARRAY_A);
+        $sql = $wpdb->prepare("SELECT * FROM {$model->table} WHERE id = %d", $id);
+        $result = $wpdb->get_row($sql);
 
         if (empty($result)) {
-            throw new \roshangiga\models\NoResultException("No record found with ID $id in {$model->table}");
+            throw new \mtorm\NoResultException("No record found with ID $id in {$model->table}");
         }
 
         $model->setFields($result);
@@ -277,7 +314,7 @@ abstract class BaseModel
      * @return static An instance of the calling class with properties set to the values of the retrieved record.
      *
      * @throws \InvalidArgumentException If the $conditions argument is not an array.
-     * @throws \roshangiga\models\NoResultException If no record matches the provided conditions.
+     * @throws NoResultException If no record matches the provided conditions.
      */
     public static function getWhere(array $conditions = []): BaseModel {
         if (empty($conditions)) {
@@ -285,18 +322,20 @@ abstract class BaseModel
         }
 
         global $wpdb;
-        $model = new static($wpdb); // Creates an instance of the derived class
+
+        $model = new static();
 
         $whereClause = self::buildWhereClause($conditions, $model);
-        $sql = $model->wpdb->prepare("SELECT * FROM {$model->table} WHERE {$whereClause}");
+        $sql = $wpdb->prepare("SELECT * FROM {$model->table} WHERE {$whereClause}");
 
-        $result = $model->wpdb->get_row($sql, ARRAY_A);
+        $result = $wpdb->get_row($sql, ARRAY_A);
 
         if (empty($result)) {
-            throw new \roshangiga\models\NoResultException("No record found for : " . $sql);
+            throw new NoResultException("No record found for : " . $sql);
         }
 
         $model->setFields($result);
+
         return $model;
     }
 
@@ -314,14 +353,14 @@ abstract class BaseModel
     public static function getAll(array $conditions = []): Collection {
 
         global $wpdb;
-        $model = new static($wpdb); // Creates an instance of the derived class
+        $model = new static(); // Creates an instance of the derived class
 
         $whereClause = self::buildWhereClause($conditions, $model);
-        $sql = $model->wpdb->prepare("SELECT * FROM {$model->table} WHERE {$whereClause}");
+        $sql = $wpdb->prepare("SELECT * FROM {$model->table} WHERE {$whereClause}");
 
-        $results = $model->wpdb->get_results($sql, ARRAY_A);
+        $results = $wpdb->get_results($sql, ARRAY_A);
 
-        return $model->getCollectedResults($results);
+        return $model->getCollectedResults($results, null);
     }
 
     /**
@@ -335,8 +374,10 @@ abstract class BaseModel
      * @return bool true if the delete operation was successful, false otherwise
      */
     public function delete(): bool {
+        global $wpdb;
+
         if (isset($this->id)) {
-            return $this->wpdb->delete($this->table, ['id' => $this->id]) > 0;
+            return $wpdb->delete($this->table, ['id' => $this->id]) > 0;
         }
         return false;
     }
@@ -358,14 +399,14 @@ abstract class BaseModel
         }
 
         global $wpdb;
-        $model = new static($wpdb); // Creates an instance of the derived class
+        $model = new static(); // Creates an instance of the derived class
 
         $whereClause = self::buildWhereClause($conditions, $model);
-        $sql = $model->wpdb->prepare("DELETE * FROM {$model->table} WHERE {$whereClause}");
+        $sql = $wpdb->prepare("DELETE * FROM {$model->table} WHERE {$whereClause}");
 
-        $result = $model->wpdb->query($sql);
+        $result = $wpdb->query($sql);
 
-        if ($model->wpdb->last_error) {
+        if ($wpdb->last_error) {
             throw new \RuntimeException("Delete operation failed: " . $model->wpdb->last_error);
         }
 
@@ -395,7 +436,7 @@ abstract class BaseModel
         }
 
         global $wpdb;
-        $model = new static($wpdb);
+        $model = new static();
         $table = $model->getTable();
 
         // Collect the IDs of the models
