@@ -11,8 +11,6 @@
  */
 namespace roshangiga;
 
-use mtorm\Collection;
-
 abstract class BaseModel
 {
     protected string $table;
