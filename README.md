@@ -31,12 +31,12 @@ class Cafeteria extends BaseModel {
     
     // Optional
     protected static array $oneToOne = [
-        Meal::class => 'cafeteria_id',  // assuming Meal has 'cafeteria_id' as foreign key
+        Meal::class => ['foreign_key' => 'cafeteria_id', 'local_key' => 'id'],  // assuming Meal has 'cafeteria_id' as foreign key
     ];
 
     // Optional
     protected static array $oneToMany = [
-        Staff::class => 'cafeteria_id', // assuming Staff has 'cafeteria_id' as foreign key
+        Staff::class => ['foreign_key' => 'order_id', 'local_key' => 'id'], // assuming Staff has 'order_id' as foreign key
     ];
     
     // ...

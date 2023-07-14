@@ -10,10 +10,14 @@
 class Example extends BaseModel
 {
     protected static string $tableName = "mt_example";
-    protected static array $fields = [
-        'id',
-        'order_id',
-        'name',
-        'email',
+
+    protected static array $oneToOne = [
+
+        Meal => 'order_id',
+    ];
+
+    protected static array $oneToMany = [
+
+        Staff => 'order_id',
     ];
 }

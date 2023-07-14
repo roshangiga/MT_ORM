@@ -11,13 +11,58 @@
  */
 namespace roshangiga;
 
+use InvalidArgumentException;
+
 abstract class BaseModel
 {
     protected string $table;
     protected int $last_id;
     protected string $last_query;
     protected array $fields = [];
-    protected array $excluded_fields = [];
+
+    /**
+     * Primary key column name for the table.
+     * Override this in child classes if primary key is not 'id'.
+     *
+     * @var string
+     */
+    protected string $primaryKey = 'id';
+
+    /**
+     * Associative array defining one-to-one relationships.
+     *
+     * Format:
+     * ```
+     * protected static array $excludeFields = ['timestamp',];
+     * ```
+     *
+     * @var array<string, string>
+     */
+    protected array $excludeFields = [];
+    /**
+     * Associative array defining one-to-one relationships.
+     *
+     * Format:
+     * ```
+     * protected static array $oneToOne = [RelatedClassName => 'foreign_key_name',]
+     * ```
+     *
+     * @var array<string, string>
+     */
+    protected static array $oneToOne = [];
+
+    /**
+     * Associative array defining one-to-many relationships.
+     *
+     * Format:
+     * ```
+     * protected static array $oneToMany = [RelatedClassName => 'foreign_key_name',]
+     * ```
+     *
+     * @var array<string, string>
+     */
+    protected static array $oneToMany = [];
+
 
     public function __construct() {
         global $wpdb;
@@ -30,13 +75,11 @@ abstract class BaseModel
         $fields = static::$fields ?? $this->getTableColumns();
 
         // Exclude fields specified in $excludeFields property of the child class
-        if (property_exists($this, 'excludeFields')) {
-            $this->excluded_fields = static::$excludeFields;
-            $fields = array_diff($fields, $this->excluded_fields);
+        if (isset(static::$excludeFields)) {
+            $fields = array_diff($fields, static::$excludeFields);
         }
 
         $this->fields = $fields;
-
     }
 
     protected function getTableColumns(): array {
@@ -44,6 +87,38 @@ abstract class BaseModel
 
         $sql = "SHOW COLUMNS FROM $this->table";
         return $wpdb->get_col($sql);
+    }
+
+    /**
+     * Fetching related data if relationships are defined
+     *
+     * @param BaseModel $model
+     * @return BaseModel
+     */
+
+    public static function fetchingRelatedDataIfRelationshipsDefined(BaseModel $model): BaseModel {
+
+        foreach (static::$oneToOne as $relatedModel => $keys) {
+
+            $localValue = $model->{$keys['local_key']};
+            $relatedData = $relatedModel::getWhere([$keys['foreign_key'] => $localValue]);
+
+            $classParts = explode('\\', $relatedModel);
+            $className = end($classParts);
+            $model->{$className} = $relatedData; // appending the related data to the model
+        }
+
+        foreach (static::$oneToMany as $relatedModel => $keys) {
+            $localValue = $model->{$keys['local_key']};
+            $relatedData = $relatedModel::getAll([$keys['foreign_key'] => $localValue]);
+
+            // Map through the related data collection and get fields for each model
+            $classParts = explode('\\', $relatedModel);
+            $className = end($classParts);
+            $model->{$className} = $relatedData; // appending the related data to the model
+        }
+
+        return $model;
     }
 
     /**
@@ -79,27 +154,55 @@ abstract class BaseModel
         return $this->last_id;
     }
 
-    // Magic method for getting properties
+    /**
+     * Checks if the provided property exists in either the model's fields or its relationships.
+     *
+     * @param string $propertyName The name of the property to check.
+     *
+     * @return bool Returns true if the property exists in either fields or relationships, false otherwise.
+     */
+    protected function checkPropertyExistence($propertyName): bool {
+        // Check if the property is in fields
+        if (in_array($propertyName, $this->fields, true)) {
+            return true;
+        }
+
+        // Combine the relationships and check if the property is in there
+        $relationships = array_merge(static::$oneToOne, static::$oneToMany);
+
+        foreach ($relationships as $relatedModel => $keys) {
+            $classParts = explode('\\', $relatedModel);
+            $className = end($classParts);
+
+            if ($className === $propertyName) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Magic getter method.
+     *
+     * @param string $name Name of the property.
+     * @return mixed  Value of the property.
+     * @throws InvalidArgumentException if the property is not defined.
+     */
     public function __get($name) {
-        if (property_exists($this, $name)) {
+        if ($this->checkPropertyExistence($name)) {
             return $this->$name;
         }
 
-        if (!in_array($name, $this->fields, true)) {
-            throw new \InvalidArgumentException("Undefined property: {$name}. Is it defined in fields?");
-        }
-
-        return null;
+        throw new InvalidArgumentException("Undefined property: {$name}. Is it defined in fields or relationships?");
     }
 
     // Magic method for setting properties
     public function __set($name, $value) {
-        if (in_array($name, $this->fields, true)) {
+        if ($this->checkPropertyExistence($name)) {
             $this->$name = $value;
         } else {
-            throw new \InvalidArgumentException("Undefined property: {$name}. Is it defined in fields?");
+            throw new InvalidArgumentException("Undefined property: {$name}. Is it defined in fields or relationships?");
         }
-
     }
 
     // Magic method for checking if a property is set
@@ -139,7 +242,7 @@ abstract class BaseModel
      * @param array $where A named array of WHERE clauses (in column => value pairs).
      * @return bool|int The number of rows updated, or false on error.
      */
-    private function update(array $data, array $where)  {
+    private function update(array $data, array $where) {
         global $wpdb;
 
         $result = $wpdb->update(
@@ -162,7 +265,7 @@ abstract class BaseModel
     }
 
     /**
-     * Insert row or update (if $data['id'] is passed)
+     * Insert row or update (if $this->primaryKey is passed & exists)
      *
      * @param array $data Data to update (in column => value pairs).
      * @return bool|int The number of rows updated, or false on error.
@@ -227,16 +330,15 @@ abstract class BaseModel
      * @return array Returns an associative array of the class properties.
      */
     public function getFields(): array {
-
-        $values = [];
-
-        // Only include properties that correspond to database fields
+        $fields = [];
         foreach ($this->fields as $field) {
             if (property_exists($this, $field)) {
-                $values[$field] = $this->$field;
+                $fields[$field] = $this->$field;
+            } else {
+                throw new Exception("Undefined property: {$field}. Is it defined in fields?");
             }
         }
-        return $values;
+        return $fields;
     }
 
     /**
@@ -267,33 +369,32 @@ abstract class BaseModel
 
 
     /**
-     * Fetches a single record from the table by its id.
+     * Fetches a single record from the table by its primary key value.
      *
      * **Example:**
      * ```php
-     * $history = History::get(1); // Fetches the history with the id of 1
+     * $history = History::get(1); // Fetches the history with pk value of 1
      * ```
-     * @param int $id The id of the record to fetch.
-     *
+     * @param int $pkval The primary key value (default id).
      * @return BaseModel Returns an instance of the calling class that represents the fetched record.
      *
-     * @throws \Exception Throws an exception if the SQL query fails or the record is not found.
      */
-    public static function get(int $id): BaseModel {
+    public static function get(int $pkval): BaseModel {
+
         global $wpdb;
         $model = new static();
 
-        $sql = $wpdb->prepare("SELECT * FROM {$model->table} WHERE id = %d", $id);
-        $result = $wpdb->get_row($sql);
+        $sql = $wpdb->prepare("SELECT * FROM {$model->table} WHERE {$model->primaryKey} = %d", $pkval);
+        $result = $wpdb->get_row($sql, ARRAY_A);
 
         if (empty($result)) {
-            throw new \mtorm\NoResultException("No record found with ID $id in {$model->table}");
+            throw new NoResultException("No record found with {$model->primaryKey} ($pkval) in {$model->table}");
         }
 
         $model->setFields($result);
-        return $model;
-    }
 
+        return self::fetchingRelatedDataIfRelationshipsDefined($model);
+    }
 
     /**
      * Retrieves a record based on provided conditions.
@@ -311,21 +412,19 @@ abstract class BaseModel
      * @param array $conditions Data to search (in column => value pairs).
      * @return static An instance of the calling class with properties set to the values of the retrieved record.
      *
-     * @throws \InvalidArgumentException If the $conditions argument is not an array.
+     * @throws InvalidArgumentException If the $conditions argument is not an array.
      * @throws NoResultException If no record matches the provided conditions.
      */
     public static function getWhere(array $conditions = []): BaseModel {
         if (empty($conditions)) {
-            throw new \InvalidArgumentException("Invalid argument provided for conditions. Expected associative array.");
+            throw new InvalidArgumentException("Invalid argument provided for conditions. Expected associative array.");
         }
 
         global $wpdb;
-
         $model = new static();
 
         $whereClause = self::buildWhereClause($conditions, $model);
         $sql = $wpdb->prepare("SELECT * FROM {$model->table} WHERE {$whereClause}");
-
         $result = $wpdb->get_row($sql, ARRAY_A);
 
         if (empty($result)) {
@@ -355,10 +454,20 @@ abstract class BaseModel
 
         $whereClause = self::buildWhereClause($conditions, $model);
         $sql = $wpdb->prepare("SELECT * FROM {$model->table} WHERE {$whereClause}");
-
         $results = $wpdb->get_results($sql, ARRAY_A);
 
-        return $model->getCollectedResults($results, null);
+        $rows = [];
+        foreach ($results as $key => $result) {
+
+            // Creating a new instance for each row
+            $rowModel = new static();
+            $rowModel->setFields($result);
+
+            // Fetching related data if relationships are defined
+            $rows[] = self::fetchingRelatedDataIfRelationshipsDefined($rowModel);
+        }
+
+        return new Collection($rows);
     }
 
     /**
@@ -374,11 +483,14 @@ abstract class BaseModel
     public function delete(): bool {
         global $wpdb;
 
-        if (isset($this->id)) {
-            return $wpdb->delete($this->table, ['id' => $this->id]) > 0;
+        $primaryKey = static::$primaryKey ?? 'id';
+
+        if (isset($this->$primaryKey)) {
+            return $wpdb->delete($this->table, [$primaryKey => $this->$primaryKey]) > 0;
         }
         return false;
     }
+
 
     /**
      * Delete records matching provided conditions.
@@ -393,7 +505,7 @@ abstract class BaseModel
      */
     public static function deleteWhere(array $conditions): int {
         if (empty($conditions)) {
-            throw new \InvalidArgumentException("Invalid argument provided for conditions. Expected associative array.");
+            throw new InvalidArgumentException("Invalid argument provided for conditions. Expected associative array.");
         }
 
         global $wpdb;
@@ -422,37 +534,37 @@ abstract class BaseModel
      * @param Collection $models A collection of models to update.
      * @param array $data An associative array of field names and values to update.
      *
-     * @throws \InvalidArgumentException if the $models collection is empty.
+     * @return bool True if the operation was successful, false otherwise.
      * @throws \RuntimeException if the SQL query fails.
      *
-     * @return bool True if the operation was successful, false otherwise.
+     * @throws InvalidArgumentException if the $models collection is empty.
      */
-    public static function bulkSave(Collection $models, array $data): bool
-    {
-        if(empty($models)) {
+    public static function bulkSave(Collection $models, array $data): bool {
+        if (empty($models)) {
             throw new \InvalidArgumentException("The collection of models is empty.");
         }
 
         global $wpdb;
         $model = new static();
         $table = $model->getTable();
+        $primaryKey = static::$primaryKey ?? 'id';
 
         // Collect the IDs of the models
         $ids = [];
-        foreach($models as $model) {
-            $ids[] = $model->id;
+        foreach ($models as $model) {
+            $ids[] = $model->$primaryKey;
         }
 
         // Prepare the SET clause
         $set = [];
-        foreach($data as $key => $value) {
+        foreach ($data as $key => $value) {
             $set[] = $wpdb->prepare("{$key} = %s", $value);
         }
         $setClause = implode(", ", $set);
 
         // Prepare the WHERE clause
         $idsFormat = implode(", ", array_fill(0, count($ids), '%d'));
-        $whereClause = $wpdb->prepare("id IN ($idsFormat)", $ids);
+        $whereClause = $wpdb->prepare("{$primaryKey} IN ($idsFormat)", $ids);
 
         // Prepare the full SQL statement
         $sql = "UPDATE {$table} SET {$setClause} WHERE {$whereClause}";
@@ -484,14 +596,14 @@ abstract class BaseModel
      */
     public function save() {
         $data = $this->getFields();
+        $primaryKey = static::$primaryKey ?? 'id';
 
-        if (isset($this->id)) {
-            return $this->update($data, ['id' => $this->id]);
+        if (isset($this->$primaryKey)) {
+            return $this->update($data, [$primaryKey => $this->$primaryKey]);
         }
 
         return $this->replace($data);
     }
-
 }
 
 // Custom exception class
