@@ -38,7 +38,7 @@ abstract class BaseModel
      *
      * @var array<string, string>
      */
-    protected array $excludeFields = [];
+    protected array $excludeFields = ['created_at', 'updated_at'];
     /**
      * Associative array defining one-to-one relationships.
      *
@@ -74,6 +74,9 @@ abstract class BaseModel
         // Check if inherited fields are set, if they are not, get columns from the database
         $fields = static::$fields ?? $this->getTableColumns();
 
+        // Exclude fields specified in $excludeFields property
+        $fields = array_diff($fields, $this->excludeFields);
+
         // Exclude fields specified in $excludeFields property of the child class
         if (isset(static::$excludeFields)) {
             $fields = array_diff($fields, static::$excludeFields);
@@ -90,7 +93,7 @@ abstract class BaseModel
     }
 
     /**
-     * Fetching related data if relationships are defined
+     * Fetching related data if relationships are defined by adding related data to the existing model
      *
      * @param BaseModel $model
      * @return BaseModel
@@ -99,25 +102,30 @@ abstract class BaseModel
     public static function fetchingRelatedDataIfRelationshipsDefined(BaseModel $model): BaseModel {
 
         foreach (static::$oneToOne as $relatedModel => $keys) {
-
             $localValue = $model->{$keys['local_key']};
-            $relatedData = $relatedModel::getWhere([$keys['foreign_key'] => $localValue]);
-
-            $classParts = explode('\\', $relatedModel);
-            $className = end($classParts);
-            $model->{$className} = $relatedData; // appending the related data to the model
+            try {
+                $relatedData = $relatedModel::getWhere([$keys['foreign_key'] => $localValue]);
+                $classParts = explode('\\', $relatedModel);
+                $className = end($classParts);
+                $model->{$className} = $relatedData; // appending the related data to the model
+            } catch (NoResultException $e) {
+                // ignore
+            }
         }
 
         foreach (static::$oneToMany as $relatedModel => $keys) {
             $localValue = $model->{$keys['local_key']};
+
             $relatedData = $relatedModel::getAll([$keys['foreign_key'] => $localValue]);
 
+            if (empty($relatedData)) {
+                continue;
+            }
             // Map through the related data collection and get fields for each model
             $classParts = explode('\\', $relatedModel);
             $className = end($classParts);
             $model->{$className} = $relatedData; // appending the related data to the model
         }
-
         return $model;
     }
 
@@ -161,7 +169,7 @@ abstract class BaseModel
      *
      * @return bool Returns true if the property exists in either fields or relationships, false otherwise.
      */
-    protected function checkPropertyExistence($propertyName): bool {
+    private function checkPropertyExistence($propertyName): bool {
         // Check if the property is in fields
         if (in_array($propertyName, $this->fields, true)) {
             return true;
@@ -226,7 +234,7 @@ abstract class BaseModel
 
         $where = [];
         foreach ($conditions as $field => $value) {
-            if (in_array($field, $model->fields, true)) {
+            if ($model->checkPropertyExistence($field)) {
                 $where[] = $wpdb->prepare("{$field} = %s", $value);
             }
         }
@@ -332,10 +340,11 @@ abstract class BaseModel
     public function getFields(): array {
         $fields = [];
         foreach ($this->fields as $field) {
-            if (property_exists($this, $field)) {
+            if ($this->checkPropertyExistence($field)) {
                 $fields[$field] = $this->$field;
             } else {
-                throw new Exception("Undefined property: {$field}. Is it defined in fields?");
+                throw new InvalidArgumentException("Undefined property: {$field}. Is it defined in fields or relationships?");
+
             }
         }
         return $fields;
